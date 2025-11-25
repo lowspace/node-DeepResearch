@@ -2,332 +2,45 @@
 
 [Official UI](https://search.jina.ai/) | [UI Code](https://github.com/jina-ai/deepsearch-ui) | [Stable API](https://jina.ai/deepsearch) | [Blog](https://jina.ai/news/a-practical-guide-to-implementing-deepsearch-deepresearch)
 
-Keep searching, reading webpages, reasoning until an answer is found (or the token budget is exceeded). Useful for deeply investigating a query.
+**架构**：
 
-> [!IMPORTANT]  
-> Unlike OpenAI/Gemini/Perplexity's "Deep Research", we focus solely on **finding the right answers via our iterative process**. We don't optimize for long-form articles, that's a **completely different problem** – so if you need quick, concise answers from deep search, you're in the right place. If you're looking for AI-generated long reports like OpenAI/Gemini/Perplexity does, this isn't for you.
-
-```mermaid
----
-config:
-  theme: mc
-  look: handDrawn
----
-flowchart LR
- subgraph Loop["until budget exceed"]
-    direction LR
-        Search["Search"]
-        Read["Read"]
-        Reason["Reason"]
-  end
-    Query(["Query"]) --> Loop
-    Search --> Read
-    Read --> Reason
-    Reason --> Search
-    Loop --> Answer(["Answer"])
+<img width="1080" height="450" alt="image" src="https://github.com/user-attachments/assets/4b75934f-7a4d-47d9-aa96-720605cfaf18" />
 
 ```
+// 主推理循环
+while (tokenUsage < tokenBudget && badAttempts <= maxBadAttempts) {
+  // 追踪进度
+  step++; totalStep++;
 
-## [Blog Post](https://jina.ai/news/a-practical-guide-to-implementing-deepsearch-deepresearch)
+  // 从 gaps 队列中获取当前问题，如果没有则使用原始问题
+  const currentQuestion = gaps.length > 0 ? gaps.shift() : question;
 
-Whether you like this implementation or not, I highly recommend you to read DeepSearch/DeepResearch implementation guide I wrote, which gives you a gentle intro to this topic.
+  // 根据当前上下文和允许的操作生成提示词
+  system = getPrompt(diaryContext, allQuestions, allKeywords,
+                    allowReflect, allowAnswer, allowRead, allowSearch, allowCoding,
+                    badContext, allKnowledge, unvisitedURLs);
 
-- [English Part I](https://jina.ai/news/a-practical-guide-to-implementing-deepsearch-deepresearch), [Part II](https://jina.ai/news/snippet-selection-and-url-ranking-in-deepsearch-deepresearch)
-- [中文微信公众号 第一讲](https://mp.weixin.qq.com/s/-pPhHDi2nz8hp5R3Lm_mww), [第二讲](https://mp.weixin.qq.com/s/apnorBj4TZs3-Mo23xUReQ)
-- [日本語: DeepSearch/DeepResearch 実装の実践ガイド](https://jina.ai/ja/news/a-practical-guide-to-implementing-deepsearch-deepresearch)
+  // 让 LLM 决定下一步行动
+  const result = await LLM.generateStructuredResponse(system, messages, schema);
+  thisStep = result.object;
 
-## Try it Yourself
-
-We host an online deployment of this **exact** codebase, which allows you to do a vibe-check; or use it as daily productivity tools.
-
-https://search.jina.ai
-
-The official API is also available for you to use:
-
-```
-https://deepsearch.jina.ai/v1/chat/completions
-```
-
-Learn more about the API at https://jina.ai/deepsearch
-
-
-
-
-## Install
-
-```bash
-git clone https://github.com/jina-ai/node-DeepResearch.git
-cd node-DeepResearch
-npm install
-```
-
-[安装部署视频教程 on Youtube](https://youtu.be/vrpraFiPUyA)
-
-It is also available on npm but not recommended for now, as the code is still under active development.
-
-
-## Usage
-
-We use Gemini (latest `gemini-2.0-flash`) / OpenAI / [LocalLLM](#use-local-llm) for reasoning, [Jina Reader](https://jina.ai/reader) for searching and reading webpages, you can get a free API key with 1M tokens from jina.ai. 
-
-```bash
-export GEMINI_API_KEY=...  # for gemini
-# export OPENAI_API_KEY=... # for openai
-# export LLM_PROVIDER=openai # for openai
-export JINA_API_KEY=jina_...  # free jina api key, get from https://jina.ai/reader
-
-npm run dev $QUERY
-```
-
-### Official Site
-
-You can try it on [our official site](https://search.jina.ai).
-
-### Official API
-
-You can also use [our official DeepSearch API](https://jina.ai/deepsearch):
-
-```
-https://deepsearch.jina.ai/v1/chat/completions
-```
-
-You can use it with any OpenAI-compatible client. 
-
-For the authentication Bearer, API key, rate limit, get from https://jina.ai/deepsearch.
-
-#### Client integration guidelines
-
-If you are building a web/local/mobile client that uses `Jina DeepSearch API`, here are some design guidelines:
-- Our API is fully compatible with [OpenAI API schema](https://platform.openai.com/docs/api-reference/chat/create), this should greatly simplify the integration process. The model name is `jina-deepsearch-v1`.
-- Our DeepSearch API is a reasoning+search grounding LLM, so it's best for questions that require deep reasoning and search.
-- Two special tokens are introduced `<think>...</think>`. Please render them with care.
-- Citations are often provided, and in [Github-flavored markdown footnote format](https://github.blog/changelog/2021-09-30-footnotes-now-supported-in-markdown-fields/), e.g. `[^1]`, `[^2]`, ...
-- Guide the user to get a Jina API key from https://jina.ai, with 1M free tokens for new API key.
-- There are rate limits, [between 10RPM to 30RPM depending on the API key tier](https://jina.ai/contact-sales#rate-limit).
-- [Download Jina AI logo here](https://jina.ai/logo-Jina-1024.zip)
-
-## Demo
-> was recorded with `gemini-1.5-flash`, the latest `gemini-2.0-flash` leads to much better results!
-
-Query: `"what is the latest blog post's title from jina ai?"`
-3 steps; answer is correct!
-![demo1](.github/visuals/demo.gif)
-
-Query: `"what is the context length of readerlm-v2?"`
-2 steps; answer is correct!
-![demo1](.github/visuals/demo3.gif)
-
-Query: `"list all employees from jina ai that u can find, as many as possible"` 
-11 steps; partially correct! but im not in the list :(
-![demo1](.github/visuals/demo2.gif)
-
-Query: `"who will be the biggest competitor of Jina AI"` 
-42 steps; future prediction kind, so it's arguably correct! atm Im not seeing `weaviate` as a competitor, but im open for the future "i told you so" moment.
-![demo1](.github/visuals/demo4.gif)
-
-More examples:
-
-```
-# example: no tool calling 
-npm run dev "1+1="
-npm run dev "what is the capital of France?"
-
-# example: 2-step
-npm run dev "what is the latest news from Jina AI?"
-
-# example: 3-step
-npm run dev "what is the twitter account of jina ai's founder"
-
-# example: 13-step, ambiguious question (no def of "big")
-npm run dev "who is bigger? cohere, jina ai, voyage?"
-
-# example: open question, research-like, long chain of thoughts
-npm run dev "who will be president of US in 2028?"
-npm run dev "what should be jina ai strategy for 2025?"
-```
-
-## Use Local LLM
-
-> Note, not every LLM works with our reasoning flow, we need those who support structured output (sometimes called JSON Schema output, object output) well. Feel free to purpose a PR to add more open-source LLMs to the working list.
-
-If you use Ollama or LMStudio, you can redirect the reasoning request to your local LLM by setting the following environment variables:
-
-```bash
-export LLM_PROVIDER=openai  # yes, that's right - for local llm we still use openai client
-export OPENAI_BASE_URL=http://127.0.0.1:1234/v1  # your local llm endpoint
-export OPENAI_API_KEY=whatever  # random string would do, as we don't use it (unless your local LLM has authentication)
-export DEFAULT_MODEL_NAME=qwen2.5-7b  # your local llm model name
-```
-
-
-## OpenAI-Compatible Server API
-
-If you have a GUI client that supports OpenAI API (e.g. [CherryStudio](https://docs.cherry-ai.com/), [Chatbox](https://github.com/Bin-Huang/chatbox)) , you can simply config it to use this server.
-
-![demo1](.github/visuals/demo6.gif)
-
-Start the server:
-```bash
-# Without authentication
-npm run serve
-
-# With authentication (clients must provide this secret as Bearer token)
-npm run serve --secret=your_secret_token
-```
-
-The server will start on http://localhost:3000 with the following endpoint:
-
-### POST /v1/chat/completions
-```bash
-# Without authentication
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "jina-deepsearch-v1",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello!"
-      }
-    ]
-  }'
-
-# With authentication (when server is started with --secret)
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_secret_token" \
-  -d '{
-    "model": "jina-deepsearch-v1",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello!"
-      }
-    ],
-    "stream": true
-  }'
-```
-
-Response format:
-```json
-{
-  "id": "chatcmpl-123",
-  "object": "chat.completion",
-  "created": 1677652288,
-  "model": "jina-deepsearch-v1",
-  "system_fingerprint": "fp_44709d6fcb",
-  "choices": [{
-    "index": 0,
-    "message": {
-      "role": "assistant",
-      "content": "YOUR FINAL ANSWER"
-    },
-    "logprobs": null,
-    "finish_reason": "stop"
-  }],
-  "usage": {
-    "prompt_tokens": 9,
-    "completion_tokens": 12,
-    "total_tokens": 21
-  }
+  // 执行所选的行动（回答、反思、搜索、访问、编码）
+  if (thisStep.action === 'answer') {
+    // 处理回答行动...
+  } else if (thisStep.action === 'reflect') {
+    // 处理反思行动...
+  } // ... 其他行动依此类推
 }
 ```
 
-For streaming responses (stream: true), the server sends chunks in this format:
-```json
-{
-  "id": "chatcmpl-123",
-  "object": "chat.completion.chunk",
-  "created": 1694268190,
-  "model": "jina-deepsearch-v1",
-  "system_fingerprint": "fp_44709d6fcb",
-  "choices": [{
-    "index": 0,
-    "delta": {
-      "content": "..."
-    },
-    "logprobs": null,
-    "finish_reason": null
-  }]
-}
-```
 
-Note: The think content in streaming responses is wrapped in XML tags:
-```
-<think>
-[thinking steps...]
-</think>
-[final answer]
-```
+## Findings
 
-
-## Docker Setup
-
-### Build Docker Image
-To build the Docker image for the application, run the following command:
-```bash
-docker build -t deepresearch:latest .
-```
-
-### Run Docker Container
-To run the Docker container, use the following command:
-```bash
-docker run -p 3000:3000 --env GEMINI_API_KEY=your_gemini_api_key --env JINA_API_KEY=your_jina_api_key deepresearch:latest
-```
-
-### Docker Compose
-You can also use Docker Compose to manage multi-container applications. To start the application with Docker Compose, run:
-```bash
-docker-compose up
-```
-
-## How Does it Work?
-
-Not sure a flowchart helps, but here it is:
-
-```mermaid
-flowchart TD
-    Start([Start]) --> Init[Initialize context & variables]
-    Init --> CheckBudget{Token budget<br/>exceeded?}
-    CheckBudget -->|No| GetQuestion[Get current question<br/>from gaps]
-    CheckBudget -->|Yes| BeastMode[Enter Beast Mode]
-
-    GetQuestion --> GenPrompt[Generate prompt]
-    GenPrompt --> ModelGen[Generate response<br/>using Gemini]
-    ModelGen --> ActionCheck{Check action<br/>type}
-
-    ActionCheck -->|answer| AnswerCheck{Is original<br/>question?}
-    AnswerCheck -->|Yes| EvalAnswer[Evaluate answer]
-    EvalAnswer --> IsGoodAnswer{Is answer<br/>definitive?}
-    IsGoodAnswer -->|Yes| HasRefs{Has<br/>references?}
-    HasRefs -->|Yes| End([End])
-    HasRefs -->|No| GetQuestion
-    IsGoodAnswer -->|No| StoreBad[Store bad attempt<br/>Reset context]
-    StoreBad --> GetQuestion
-
-    AnswerCheck -->|No| StoreKnowledge[Store as intermediate<br/>knowledge]
-    StoreKnowledge --> GetQuestion
-
-    ActionCheck -->|reflect| ProcessQuestions[Process new<br/>sub-questions]
-    ProcessQuestions --> DedupQuestions{New unique<br/>questions?}
-    DedupQuestions -->|Yes| AddGaps[Add to gaps queue]
-    DedupQuestions -->|No| DisableReflect[Disable reflect<br/>for next step]
-    AddGaps --> GetQuestion
-    DisableReflect --> GetQuestion
-
-    ActionCheck -->|search| SearchQuery[Execute search]
-    SearchQuery --> NewURLs{New URLs<br/>found?}
-    NewURLs -->|Yes| StoreURLs[Store URLs for<br/>future visits]
-    NewURLs -->|No| DisableSearch[Disable search<br/>for next step]
-    StoreURLs --> GetQuestion
-    DisableSearch --> GetQuestion
-
-    ActionCheck -->|visit| VisitURLs[Visit URLs]
-    VisitURLs --> NewContent{New content<br/>found?}
-    NewContent -->|Yes| StoreContent[Store content as<br/>knowledge]
-    NewContent -->|No| DisableVisit[Disable visit<br/>for next step]
-    StoreContent --> GetQuestion
-    DisableVisit --> GetQuestion
-
-    BeastMode --> FinalAnswer[Generate final answer] --> End
-```
+- https://github.com/lowspace/node-DeepResearch/issues/3 Jina AI 的架构和 [Langchain](https://github.com/langchain-ai/open_deep_research/tree/main) 的不同，Jina AI 采用了「先拆分 TOC，然后拆分不同 TOC 的分治方法」，Langchain 在早期也使用了这种方案；Manus 在最开始出来的时候，也是通过罗列大量的 to-do list 进行任务分解，然后按照既定线路逐一完成。这种提前规划的方案容易出现「最终报告的内容一致性和文本连贯性的问题」，因为 TOC 以下的内容基本是独立进行了，相互之间没有任何通信，同时即使在任务过程中出现了 tangential connection 或者超越当前 knowledge cutoff 的新的权威知识/领域，很有可能没法 cover 到 TOC 里面。
+- 在 deep reserach 中不使用 RAG，而直接把所有的信息扔到 context 里面进行处理 => 需要大量的 context engineering。
+- 「rewrite user query」被认为是核心提点措施，不仅能将 user input query 转化为更适合 BM25 算法处理的关键词形式，还能拓展查询范围，覆盖多语言、语调、格式下的潜在答案。Jina AI 写了一个多语言的包含 thinking 过程的 few-shots 的 rewriter 来干这活。
+- https://github.com/lowspace/node-DeepResearch/discussions/9 Jina 设计了一个评估模块来判断回答的质量，这个评估模块会根据「预定义的规则集」对回答质量进行评估。我认为这个模块缺乏弹性以及可维护性 —— 1. 细致的规则可能会在缺乏足够上下文的时候判断出错，比如认为回答太过于发散 2. 细致的规则集之间的化学反应很难 debug，可能过于严格了 3. 规则的后续维护是大问题，永远需要有人去维护一个很大的规则集，而且模型版本更新后，模型性格也会变，prompt 可能也会随之改变。llm-as-judge 是不错的选择，但给定规则集有点太死板了。
+- https://github.com/lowspace/node-DeepResearch/discussions/7 thinking budget 既可以通过在提示词中要求推理模型使用「wait」等 thinking tokens 延长推理时间，又可以通过 API 中 `reasoning_effort` 进行控制。`reasoning_effort` 的实现结合了 hard limit 和 soft limit 两种，前者是通过 token counter 直接进行截断，比如只允许思考 2k tokens，到达的时候直接截断 thinking；后者是通过 RL 训练 llm 自主选择回复的长度（应该可以通过注入训练时提醒模型生成长文的 token 要求模型一直生成长回复）。
+- https://github.com/lowspace/node-DeepResearch/discussions/15 很有意思的是，Jina 中数据传递基本都使用的是 JSON，因此 Jina 很看重 JSON schema。Langchain 和 Anthropic 在介绍 deep research 的系统中都没有提到，Langchain 在具体实现中只使用了一两次 JSON schema。我认为这里可能是 Jina 有 JSON 的路径依赖了，开发中有各种 state，使用 JSON 是必然的结果 => 没有使用 langgraph 这些框架还是有其劣势。
+- https://github.com/lowspace/node-DeepResearch/discussions/1#discussioncomment-14554758 Jina 开发了一种基于 embedding 的滑动分块方法：先转 embedding；再确定分块的级别，字符、句子、段落、语义等；再滑动计算 similarity 提取最相关的文本块。就像滑动窗口一样，提取出来的文本块是 embedding 最相似的。
+- https://github.com/lowspace/node-DeepResearch/discussions/1#discussioncomment-14574970 Jina 使用了一个 rerank 策略对 webpage 进行打分，该策略考虑了「频率信号」，越热门越权威；「路径结构」，路径越短越重要；「语义相关性」，文本和 query 之间的联系程度；「最后更新时间」，越新的最重要；还有其它一些关于网络结构的特定优化，比如 paywall 的 blacklist，同一域名下的数量限制等。
